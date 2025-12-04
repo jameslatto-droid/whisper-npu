@@ -1,0 +1,59 @@
+# ONNX model directories (download separately - too large for git)
+whisper-tiny-onnx/
+whisper-base-onnx/
+whisper-small-onnx/
+whisper-medium-onnx/
+whisper-large-v3-turbo-onnx/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Session/temp files
+SESSION_STATE.md
+
+# Audio files (user data)
+*.m4a
+*.mp3
+*.wav
+*.flac
+
+# Output files
+*.srt
+*.txt
+!README.md
+!requirements.txt

@@ -1,0 +1,225 @@
+#!/usr/bin/env python3
+"""
+Whisper Transcription Tool for Windows ARM64
+Using HuggingFace Transformers (optimized for Snapdragon)
+
+Usage:
+    python transcribe_hf.py audio.mp3
+    python transcribe_hf.py audio.mp3 --model medium --language en
+    python transcribe_hf.py folder/ --batch
+"""
+
+import argparse
+import os
+import sys
+import time
+from pathlib import Path
+from datetime import timedelta
+
+def format_timestamp(seconds: float) -> str:
+    """Convert seconds to SRT timestamp format."""
+    td = timedelta(seconds=seconds)
+    hours = int(td.total_seconds() // 3600)
+    minutes = int((td.total_seconds() % 3600) // 60)
+    secs = int(td.total_seconds() % 60)
+    milliseconds = int((td.total_seconds() * 1000) % 1000)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d},{milliseconds:03d}"
+
+def transcribe_file(audio_path: str, pipe, output_dir: str = None, output_formats: list = None, language: str = None):
+    """Transcribe a single audio file."""
+    audio_path = Path(audio_path)
+    if not audio_path.exists():
+        print(f"❌ File not found: {audio_path}")
+        return None
+    
+    if output_dir:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        output_dir = audio_path.parent
+    
+    if output_formats is None:
+        output_formats = ["txt", "srt"]
+    
+    base_name = audio_path.stem
+    
+    print(f"\n🎤 Transcribing: {audio_path.name}")
+    start_time = time.time()
+    
+    # Transcribe using the pipeline
+    generate_kwargs = {}
+    if language:
+        generate_kwargs["language"] = language
+    
+    result = pipe(
+        str(audio_path),
+        return_timestamps=True,
+        generate_kwargs=generate_kwargs if generate_kwargs else None
+    )
+    
+    elapsed = time.time() - start_time
+    print(f"✅ Done in {elapsed:.1f}s")
+    
+    # Save outputs
+    outputs = {}
+    
+    # Plain text
+    if "txt" in output_formats:
+        txt_path = output_dir / f"{base_name}.txt"
+        with open(txt_path, "w", encoding="utf-8") as f:
+            f.write(result["text"].strip())
+        outputs["txt"] = txt_path
+        print(f"   📄 {txt_path.name}")
+    
+    # SRT subtitles
+    if "srt" in output_formats and "chunks" in result:
+        srt_path = output_dir / f"{base_name}.srt"
+        with open(srt_path, "w", encoding="utf-8") as f:
+            for i, chunk in enumerate(result["chunks"], 1):
+                start = chunk.get("timestamp", [0, 0])[0] or 0
+                end = chunk.get("timestamp", [0, 0])[1] or start + 1
+                text = chunk.get("text", "").strip()
+                if text:
+                    f.write(f"{i}\n")
+                    f.write(f"{format_timestamp(start)} --> {format_timestamp(end)}\n")
+                    f.write(f"{text}\n\n")
+        outputs["srt"] = srt_path
+        print(f"   📄 {srt_path.name}")
+    
+    # VTT subtitles
+    if "vtt" in output_formats and "chunks" in result:
+        vtt_path = output_dir / f"{base_name}.vtt"
+        with open(vtt_path, "w", encoding="utf-8") as f:
+            f.write("WEBVTT\n\n")
+            for chunk in result["chunks"]:
+                start = chunk.get("timestamp", [0, 0])[0] or 0
+                end = chunk.get("timestamp", [0, 0])[1] or start + 1
+                text = chunk.get("text", "").strip()
+                if text:
+                    start_ts = format_timestamp(start).replace(',', '.')
+                    end_ts = format_timestamp(end).replace(',', '.')
+                    f.write(f"{start_ts} --> {end_ts}\n")
+                    f.write(f"{text}\n\n")
+        outputs["vtt"] = vtt_path
+        print(f"   📄 {vtt_path.name}")
+    
+    # JSON with full details
+    if "json" in output_formats:
+        import json
+        json_path = output_dir / f"{base_name}.json"
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(result, f, indent=2, ensure_ascii=False, default=str)
+        outputs["json"] = json_path
+        print(f"   📄 {json_path.name}")
+    
+    return result
+
+def batch_transcribe(folder_path: str, pipe, output_dir: str = None, output_formats: list = None, language: str = None):
+    """Transcribe all audio files in a folder."""
+    folder = Path(folder_path)
+    if not folder.exists():
+        print(f"❌ Folder not found: {folder}")
+        return
+    
+    # Supported audio extensions
+    audio_extensions = {'.mp3', '.m4a', '.wav', '.flac', '.ogg', '.wma', '.aac', '.mp4', '.webm'}
+    
+    # Find all audio files
+    audio_files = [f for f in folder.iterdir() if f.suffix.lower() in audio_extensions]
+    
+    if not audio_files:
+        print(f"❌ No audio files found in {folder}")
+        return
+    
+    print(f"\n📁 Found {len(audio_files)} audio file(s) in {folder}")
+    
+    if output_dir is None:
+        output_dir = folder / "transcripts"
+    
+    total_start = time.time()
+    success_count = 0
+    
+    for i, audio_file in enumerate(audio_files, 1):
+        print(f"\n[{i}/{len(audio_files)}]", end="")
+        try:
+            result = transcribe_file(str(audio_file), pipe, output_dir, output_formats, language)
+            if result:
+                success_count += 1
+        except Exception as e:
+            print(f"❌ Error: {e}")
+    
+    total_elapsed = time.time() - total_start
+    print(f"\n{'='*50}")
+    print(f"✅ Batch complete: {success_count}/{len(audio_files)} files")
+    print(f"⏱️  Total time: {total_elapsed/60:.1f} minutes")
+    print(f"📂 Output: {output_dir}")
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Whisper Transcription Tool for Windows ARM64",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python transcribe_hf.py recording.mp3
+  python transcribe_hf.py recording.mp3 --model small --language en
+  python transcribe_hf.py "C:\\Audio Files\\" --batch
+  python transcribe_hf.py folder/ --batch --model medium --output ./transcripts
+        """
+    )
+    
+    parser.add_argument("input", help="Audio file or folder path")
+    parser.add_argument("--model", "-m", default="small", 
+                        choices=["tiny", "base", "small", "medium", "large", "large-v2", "large-v3"],
+                        help="Whisper model size (default: small)")
+    parser.add_argument("--language", "-l", default=None,
+                        help="Language code (e.g., 'en', 'es'). Auto-detect if not specified")
+    parser.add_argument("--batch", "-b", action="store_true",
+                        help="Process all audio files in the input folder")
+    parser.add_argument("--output", "-o", default=None,
+                        help="Output directory for transcripts")
+    parser.add_argument("--format", "-f", default="txt,srt",
+                        help="Output formats: txt,srt,vtt,json (comma-separated, default: txt,srt)")
+    
+    args = parser.parse_args()
+    
+    # Parse output formats
+    output_formats = [fmt.strip().lower() for fmt in args.format.split(",")]
+    
+    print("=" * 50)
+    print("🎙️  Whisper Transcription Tool")
+    print("   Windows ARM64 / Snapdragon X Elite")
+    print("=" * 50)
+    print(f"Model: openai/whisper-{args.model}")
+    print(f"Language: {args.language or 'auto-detect'}")
+    print(f"Output formats: {', '.join(output_formats)}")
+    
+    # Load model
+    print(f"\n⏳ Loading whisper-{args.model} model...")
+    
+    import torch
+    from transformers import pipeline
+    
+    start_load = time.time()
+    
+    # Use the Whisper pipeline from transformers
+    pipe = pipeline(
+        "automatic-speech-recognition",
+        model=f"openai/whisper-{args.model}",
+        torch_dtype=torch.float32,  # ARM64 CPU works best with float32
+        device="cpu",
+    )
+    
+    print(f"✅ Model loaded in {time.time() - start_load:.1f}s")
+    
+    # Process
+    input_path = Path(args.input)
+    
+    if args.batch or input_path.is_dir():
+        batch_transcribe(str(input_path), pipe, args.output, output_formats, args.language)
+    else:
+        transcribe_file(str(input_path), pipe, args.output, output_formats, args.language)
+    
+    print("\n🎉 All done!")
+
+if __name__ == "__main__":
+    main()
