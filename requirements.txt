@@ -1,3 +1,17 @@
 safetensors
 tokenizers
 transformers
+
+# Audio Preprocessing (optional - for improved transcription quality)
+# Core audio processing
+scipy
+soundfile
+librosa
+
+# Noise reduction
+noisereduce
+
+# Optional: AI-powered denoising (requires PyTorch)
+# deepfilternet
+# torch
+# torchaudio

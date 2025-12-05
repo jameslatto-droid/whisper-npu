@@ -30,6 +30,30 @@ Options:
 - `--language`: auto-detected, or specify: en, es, etc.
 - `--output-dir`: Output directory for transcriptions
 - `--no-npu`: Disable NPU encoder (use CPU only)
+- `--preprocess`: Audio preprocessing for noise reduction (see below)
+
+### Audio Preprocessing
+
+For noisy recordings, use the `--preprocess` option to clean up audio before transcription:
+
+```batch
+REM Basic noise reduction with FFmpeg
+transcribe_hybrid.bat "audio.m4a" --preprocess ffmpeg
+
+REM Stronger noise reduction
+transcribe_hybrid.bat "audio.m4a" --preprocess ffmpeg --noise-reduction 25
+
+REM Auto-select best available method
+transcribe_hybrid.bat "audio.m4a" --preprocess auto
+```
+
+Preprocessing methods:
+- `ffmpeg`: FFmpeg-based denoising (highpass + afftdn + normalize) - **recommended, no extra dependencies**
+- `noisereduce`: Python noisereduce library (requires `pip install noisereduce`)
+- `deepfilternet`: AI-powered speech enhancement (best quality, requires `pip install deepfilternet torch torchaudio`)
+- `auto`: Automatically select best available method
+
+The `--noise-reduction` option controls aggressiveness (default: 15 dB, range: 5-30).
 
 ### 2. `transcribe_ffmpeg.py` (CPU-only)
 Pure CPU transcription using HuggingFace Transformers.
